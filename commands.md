@@ -52,4 +52,18 @@ touch .github/workflows/ci.yml
 * **GitHub Actions:** Native CI automation engine triggered on code pushes and pull requests targeting the main branches. Executes a two-stage matrix pipeline:
   1. **Test Stage:** Boots an isolated Python runner, installs cached dependencies, and validates API integrity via `pytest`.
   2. **Container Build Stage:** Leverages `Docker Buildx` to verify that the multi-stage `Dockerfile` compiles cleanly into an immutable image without caching issues or broken dependencies.
-  
+
+
+### Extended Observability & Telemetry Pipeline
+
+* **Prometheus Server:** Centralized metrics scraper querying the Nginx reverse proxy on a 5-second interval. Ingests raw Python runtime and HTTP distribution metrics exposed by `django-prometheus`.
+* **Loki:** Horizontally scalable, highly available log aggregation engine inspired by Prometheus. Indexes metadata labels instead of full text content to optimize storage and query speed.
+* **Grafana Alloy:** Next-generation OpenTelemetry and Prometheus-compatible telemetry collector. Hooks directly into `/var/run/docker.sock` to capture stdout/stderr streams from all cluster containers and forward structured logs to Loki.
+* **Grafana:** Central telemetry dashboard provisioned with automated Prometheus and Loki datasources. Enables real-time correlation between HTTP traffic spikes (metrics) and runtime error traces (logs).
+
+
+# Grafana (admin:admin)
+http://localhost:3000
+
+
+* **Alertmanager:** Handles alert routing, grouping, and deduplication for notifications triggered by Prometheus rules. Ingests threshold breaches (such as health-check failures or API downtime defined in `alerts.yml`) and handles notification lifecycles, silencing windows, and dispatching to on-call receivers.
