@@ -33,3 +33,7 @@ The service adheres to a decoupled, event-driven pattern designed to isolate lon
          │                      ▲
          ▼ (Consumes Tasks)     │ (Stores Task Results)
   [ Celery Worker ] ────────────┘
+
+
+  # RabbitMQ
+  http://localhost:15672 (website --> guest:guest)
