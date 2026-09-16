@@ -67,3 +67,6 @@ http://localhost:3000
 
 
 * **Alertmanager:** Handles alert routing, grouping, and deduplication for notifications triggered by Prometheus rules. Ingests threshold breaches (such as health-check failures or API downtime defined in `alerts.yml`) and handles notification lifecycles, silencing windows, and dispatching to on-call receivers.
+
+# Inside kind
+docker exec -it devops-cluster-control-plane crictl ps
