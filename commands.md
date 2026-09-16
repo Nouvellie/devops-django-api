@@ -35,5 +35,19 @@ The service adheres to a decoupled, event-driven pattern designed to isolate lon
   [ Celery Worker ] ────────────┘
 
 
-  # RabbitMQ
-  http://localhost:15672 (website --> guest:guest)
+# RabbitMQ
+http://localhost:15672 (website --> guest:guest)
+
+# Run PyTests
+docker compose exec web pytest
+
+# Create github workflow
+mkdir -p .github/workflows
+touch .github/workflows/ci.yml
+
+### Continuous Integration & Testing Layer
+
+* **Pytest (`pytest-django`):** Framework for executing automated unit and integration tests against API endpoints and metrics routes. Uses isolated API test clients and mocks Celery task dispatchers (`delay()`) to validate request lifecycles without requiring external message broker state during test runs.
+* **GitHub Actions:** Native CI automation engine triggered on code pushes and pull requests targeting the main branches. Executes a two-stage matrix pipeline:
+  1. **Test Stage:** Boots an isolated Python runner, installs cached dependencies, and validates API integrity via `pytest`.
+  2. **Container Build Stage:** Leverages `Docker Buildx` to verify that the multi-stage `Dockerfile` compiles cleanly into an immutable image without caching issues or broken dependencies.
