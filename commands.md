@@ -52,3 +52,4 @@ touch .github/workflows/ci.yml
 * **GitHub Actions:** Native CI automation engine triggered on code pushes and pull requests targeting the main branches. Executes a two-stage matrix pipeline:
   1. **Test Stage:** Boots an isolated Python runner, installs cached dependencies, and validates API integrity via `pytest`.
   2. **Container Build Stage:** Leverages `Docker Buildx` to verify that the multi-stage `Dockerfile` compiles cleanly into an immutable image without caching issues or broken dependencies.
+  
