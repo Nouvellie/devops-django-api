@@ -40,6 +40,7 @@ http://localhost:15672 (website --> guest:guest)
 
 # Run PyTests
 docker compose exec web pytest
+pytest
 
 # Create github workflow
 mkdir -p .github/workflows
