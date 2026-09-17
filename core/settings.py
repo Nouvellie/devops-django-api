@@ -1,0 +1,41 @@
+import os
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key-12345")
+DEBUG = os.getenv("DEBUG", "1") == "1"
+ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "*").split(",")
+
+INSTALLED_APPS = [
+    "django.contrib.contenttypes",
+    "django.contrib.auth",
+    "rest_framework",
+    "django_prometheus", # Before apps or top
+    "api",
+]
+
+MIDDLEWARE = [
+    "django_prometheus.middleware.PrometheusBeforeMiddleware", # <-- Must be the first
+    "django.middleware.security.SecurityMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django_prometheus.middleware.PrometheusAfterMiddleware", # <-- Must be the last
+]
+
+ROOT_URLCONF = "core.urls"
+WSGI_APPLICATION = "core.wsgi.application"
+
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": BASE_DIR / "db.sqlite3",
+    }
+}
+
+# Celery Configuration Settings
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'amqp://guest:guest@rabbitmq:5672//')
+CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', 'redis://redis:6379/1')
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'UTC'

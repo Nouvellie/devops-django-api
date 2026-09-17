@@ -1,115 +1,170 @@
+version: '3.8'
+
 services:
-  rabbitmq:
-    image: rabbitmq:3-management-alpine
-    container_name: rabbitmq
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-
-  redis:
-    image: redis:7-alpine
-    container_name: redis
-    ports:
-      - "6379:6379"
-
+  # Django Application Service (Gunicorn WSGI)
   web:
     build: .
-    container_name: django_api
+    container_name: django_web
+    restart: always
+    command: sh -c "python manage.py migrate && gunicorn core.wsgi:application --bind 0.0.0.0:8000 --workers 3"
     environment:
-      - DEBUG=1
-      - ALLOWED_HOSTS=*
-      - CELERY_BROKER_URL=amqp://guest:guest@rabbitmq:5672//
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
-    volumes:
-      - ./app:/app
-      - ./pytest.ini:/app/pytest.ini
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+      - REDIS_URL=redis://redis:6379/1
+      - CELERY_BROKER_URL=amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbitmq:5672//
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+    expose:
+      - "8000"
     depends_on:
-      - rabbitmq
       - redis
+      - rabbitmq
 
+  # Celery Worker Service for background task processing
   celery_worker:
     build: .
     container_name: celery_worker
-    command: celery -A core worker --loglevel=info
+    restart: always
+    command: celery -A core worker -l info -E
+    env_file:
+      - .env
     environment:
-      - DEBUG=1
-      - CELERY_BROKER_URL=amqp://guest:guest@rabbitmq:5672//
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+      - REDIS_URL=${REDIS}
+      - CELERY_BROKER_URL=amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbitmq:5672//
+      - CELERY_RESULT_BACKEND=${REDIS}
+    hostname: worker-1
     depends_on:
-      - rabbitmq
+      - web
       - redis
+      - rabbitmq
 
+  # Nginx Reverse Proxy Service
   nginx:
     image: nginx:alpine
     container_name: nginx_proxy
+    restart: always
     ports:
       - "80:80"
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       - web
-  
-  prometheus:
-    image: prom/prometheus:v2.54.0
-    container_name: prometheus
+
+  # Redis Service (Caching and optional broker)
+  redis:
+    image: redis:alpine
+    container_name: redis_cache
+    restart: always
+    ports:
+      - "6379:6379"
     volumes:
-      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ./observability/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - redis_data:/data
+
+  # RabbitMQ Service (Message Broker for Celery)
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: rabbitmq_broker
+    restart: always
+    env_file:
+      - .env
+    ports:
+      - "5672:5672"   # AMQP protocol port for apps
+      - "15672:15672" # Management UI web port
+    environment:
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_DEFAULT_USER}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_DEFAULT_PASS}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
+  # Flower Web UI for Celery Monitoring
+  flower:
+    image: mher/flower:latest
+    container_name: celery_flower
+    restart: always
+    ports:
+      - "5555:5555"
+    environment:
+      - CELERY_BROKER_URL=amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbitmq:5672//
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+    depends_on:
+      - redis
+      - rabbitmq
+      - celery_worker
+  
+  # Prometheus for metrics scraping
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    restart: always
     ports:
       - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
     depends_on:
-      - nginx
+      - web
 
+  # Loki for log aggregation
   loki:
-    image: grafana/loki:3.1.0
+    image: grafana/loki:latest
     container_name: loki
+    restart: always
     ports:
       - "3100:3100"
+    volumes:
+      - ./loki/loki-config.yaml:/etc/loki/local-config.yaml:ro
     command: -config.file=/etc/loki/local-config.yaml
 
-  alloy:
-    image: grafana/alloy:v1.3.1
-    container_name: alloy
+  # Promtail to ship Docker container logs to Loki
+  promtail:
+    image: grafana/promtail:latest
+    container_name: promtail
+    restart: always
     volumes:
-      - ./observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - ./promtail/promtail-config.yaml:/etc/promtail/promtail-config.yaml:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
-    command: run --server.http.listen-addr=0.0.0.0:12345 /etc/alloy/config.alloy
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    command: -config.file=/etc/promtail/promtail-config.yaml
     depends_on:
       - loki
 
+  # Grafana for Metrics & Logs Visualization
   grafana:
-    image: grafana/grafana:11.1.0
+    image: grafana/grafana:latest
     container_name: grafana
+    restart: always
     ports:
       - "3000:3000"
+    env_file:
+      - .env
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
     volumes:
-      - ./observability/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - grafana_data:/var/lib/grafana
     depends_on:
       - prometheus
       - loki
-
-  alertmanager:
-    image: prom/alertmanager:v0.27.0
-    container_name: alertmanager
-    volumes:
-      - ./observability/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
-    ports:
-      - "9093:9093"
   
+  # cAdvisor Docker monitor
   cadvisor:
-    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    image: gcr.io/cadvisor/cadvisor:latest
     container_name: cadvisor
-    privileged: true
-    devices:
-      - /dev/kmsg
+    restart: always
+    ports:
+      - "8080:8080"
     volumes:
       - /:/rootfs:ro
       - /var/run:/var/run:ro
       - /sys:/sys:ro
       - /var/lib/docker/:/var/lib/docker:ro
-      - /dev/disk/:/dev/disk:ro
-    ports:
-      - "8080:8080"
+    depends_on:
+      - redis
+  
+volumes:
+  prometheus_data:
+  grafana_data:
+  redis_data:
+  rabbitmq_data:

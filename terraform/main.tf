@@ -1,62 +1,63 @@
-terraform {
-  required_version = ">= 1.5.0"
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
+# 1. Namespace para la aplicación Django
+resource "kubernetes_namespace" "app" {
+  metadata {
+    name = "devops-django"
+    labels = {
+      environment = "local"
+      managed_by  = "terraform"
     }
   }
 }
 
-provider "aws" {
-  region = var.aws_region
-}
-
-# 1. Red aislada (VPC) para el clúster
-module "vpc" {
-  source  = "terraform-aws-modules/vpc/aws"
-  version = "5.8.1"
-
-  name = "${var.cluster_name}-vpc"
-  cidr = "10.0.0.0/16"
-
-  azs             = ["${var.aws_region}a", "${var.aws_region}b"]
-  private_subnets = ["10.0.1.0/24", "10.0.2.0/24"]
-  public_subnets  = ["10.0.101.0/24", "10.0.102.0/24"]
-
-  enable_nat_gateway   = true
-  single_nat_gateway   = true
-  enable_dns_hostnames = true
-}
-
-# 2. Clúster de Kubernetes gestionado (EKS)
-module "eks" {
-  source  = "terraform-aws-modules/eks/aws"
-  version = "20.8.5"
-
-  cluster_name    = var.cluster_name
-  cluster_version = "1.30"
-
-  cluster_endpoint_public_access = true
-
-  vpc_id                   = module.vpc.vpc_id
-  subnet_ids               = module.vpc.private_subnets
-  control_plane_subnet_ids = module.vpc.public_subnets
-
-  # Servidores de cómputo para correr los Pods (Django, Celery, Redis, etc.)
-  eks_managed_node_groups = {
-    default_nodes = {
-      min_size     = 2
-      max_size     = 5
-      desired_size = 2
-
-      instance_types = ["t3.medium"]
-      capacity_type  = "ON_DEMAND"
+# 2. Namespace para el stack de observabilidad
+resource "kubernetes_namespace" "monitoring" {
+  metadata {
+    name = "monitoring"
+    labels = {
+      environment = "local"
+      managed_by  = "terraform"
     }
   }
+}
 
-  tags = {
-    Environment = var.environment
-    Project     = "devops-django-api"
+# 3. Secretos de infraestructura gestionados por Terraform
+resource "kubernetes_secret" "django_secrets" {
+  metadata {
+    name      = "django-core-secrets"
+    namespace = kubernetes_namespace.app.metadata[0].name
   }
+
+  data = {
+    DJANGO_SECRET_KEY = "django-insecure-terraform-local-key"
+    CELERY_BROKER_URL = "amqp://guest:guest@rabbitmq-service:5672//"
+    REDIS_URL         = "redis://redis-service:6379/0"
+  }
+
+  type = "Opaque"
+}
+
+# 4. Despliegue automatizado de Kube-Prometheus-Stack (Prometheus + Grafana)
+resource "helm_release" "prometheus_stack" {
+  name       = "prometheus-stack"
+  repository = "https://prometheus-community.github.io/helm-charts"
+  chart      = "kube-prometheus-stack"
+  namespace  = kubernetes_namespace.monitoring.metadata[0].name
+
+  set {
+    name  = "grafana.adminUser"
+    value = var.grafana_admin_user
+  }
+
+  set {
+    name  = "grafana.adminPassword"
+    value = var.grafana_admin_password
+  }
+
+  # Evita bloqueos en máquinas locales deshabilitando validaciones innecesarias
+  set {
+    name  = "prometheusOperator.admissionWebhooks.enabled"
+    value = "false"
+  }
+
+  depends_on = [kubernetes_namespace.monitoring]
 }

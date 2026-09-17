@@ -1,14 +1,14 @@
-output "cluster_endpoint" {
-  description = "Endpoint de la API de Kubernetes"
-  value       = module.eks.cluster_endpoint
+output "app_namespace" {
+  description = "Namespace creado para Django"
+  value       = kubernetes_namespace.app.metadata[0].name
 }
 
-output "cluster_name" {
-  description = "Nombre del clúster EKS creado"
-  value       = module.eks.cluster_name
+output "monitoring_namespace" {
+  description = "Namespace creado para Prometheus y Grafana"
+  value       = kubernetes_namespace.monitoring.metadata[0].name
 }
 
-output "configure_kubectl" {
-  description = "Comando para conectar kubectl a este clúster"
-  value       = "aws eks --region ${var.aws_region} update-kubeconfig --name ${module.eks.cluster_name}"
+output "grafana_access_info" {
+  description = "Comando para acceder a Grafana una vez aprovisionado"
+  value       = "kubectl port-forward -n ${kubernetes_namespace.monitoring.metadata[0].name} svc/prometheus-stack-grafana 3000:80"
 }

@@ -1,17 +1,18 @@
-variable "aws_region" {
-  description = "Región de AWS donde se creará la infraestructura"
+variable "kube_context" {
+  description = "Contexto de Kubernetes a apuntar (por defecto el de Kind)"
   type        = string
-  default     = "us-east-1"
+  default     = "kind-kind"
 }
 
-variable "cluster_name" {
-  description = "Nombre del clúster de Kubernetes"
+variable "grafana_admin_user" {
+  description = "Usuario administrador para Grafana"
   type        = string
-  default     = "devops-django-cluster"
+  default     = "admin"
 }
 
-variable "environment" {
-  description = "Ambiente de despliegue"
+variable "grafana_admin_password" {
+  description = "Contraseña para el usuario admin de Grafana"
   type        = string
-  default     = "production"
+  default     = "adminpassword123"
+  sensitive   = true
 }
